@@ -296,7 +296,52 @@ void updateLabels(std::vector<float> &cloud, std::vector<uint32_t> &labels) {
         labels[cont] = colors[idx];
 
     }
+}
 
+bool projectPoint(float x, float y, float z, int &px, int &py, int count, int rows, int cols) {
+    float tempx, tempy, tempz;
+    tf::Matrix3x3 rot;
+    tf::Vector3 trans;
+
+    tf::Matrix3x3 ci;
+    rot = cs_record[count].getBasis(); trans = cs_record[count].getOrigin();
+    tempx = x * rot[0][0] + y * rot[0][1] + z * rot[0][2] + trans[0];
+    tempy = x * rot[1][0] + y * rot[1][1] + z * rot[1][2] + trans[1];
+    tempz = x * rot[2][0] + y * rot[2][1] + z * rot[2][2] + trans[2];
+    x = tempx; y = tempy; z = tempz;
+
+    rot = pr_record[count].getBasis(); trans = pr_record[count].getOrigin();
+    tempx = x * rot[0][0] + y * rot[0][1] + z * rot[0][2] + trans[0];
+    tempy = x * rot[1][0] + y * rot[1][1] + z * rot[1][2] + trans[1];
+    tempz = x * rot[2][0] + y * rot[2][1] + z * rot[2][2] + trans[2];
+    x = tempx; y = tempy; z = tempz;
+
+    rot = p1_record[count].getBasis().transpose(); trans = p1_record[count].getOrigin();
+    x -= (float) trans[0]; y -= (float) trans[1]; z -= (float) trans[2];
+    tempx = x * rot[0][0] + y * rot[0][1] + z * rot[0][2];
+    tempy = x * rot[1][0] + y * rot[1][1] + z * rot[1][2];
+    tempz = x * rot[2][0] + y * rot[2][1] + z * rot[2][2];
+    x = tempx; y = tempy; z = tempz;
+
+    rot = c1_record[count].getBasis().transpose(); trans = c1_record[count].getOrigin();
+    x -= (float) trans[0]; y -= (float) trans[1]; z -= (float) trans[2];
+    tempx = x * rot[0][0] + y * rot[0][1] + z * rot[0][2];
+    tempy = x * rot[1][0] + y * rot[1][1] + z * rot[1][2];
+    tempz = x * rot[2][0] + y * rot[2][1] + z * rot[2][2];
+    x = tempx; y = tempy; z = tempz;
+    if (tempz<3) return false;
+
+    ci = camera_intrinsics[count];
+    tempx = x * ci[0][0] + y * ci[0][1] + z * ci[0][2];
+    tempy = x * ci[1][0] + y * ci[1][1] + z * ci[1][2];
+    tempz = x * ci[2][0] + y * ci[2][1] + z * ci[2][2];
+
+    px = (int) std::roundf(tempx / tempz);
+    py = (int) std::roundf(tempy / tempz);
+
+    if (px<0 || px>=cols || py<0 || py>=rows) return false;
+
+    return true;
 }
 
 int main(int argc, char **argv)
@@ -386,79 +431,16 @@ int main(int argc, char **argv)
 
         MapTrans.stamp_ = stamp;
 
-        tf::Vector3 point;
         cv::Mat img = cv::imread(cam_front_paths[count]);
 
-        float tempx, tempy, tempz;
-        tf::Matrix3x3 rot;
-        tf::Vector3 trans;
-
-        tf::Matrix3x3 ci;
+        int px, py;
 
         for (int p=0, cont=0; p<cloud.size(); p+=4, cont++) {
 
-            x = cloud[p]; y = cloud[p+1]; z = cloud[p+2];
-            if (p==0) std::cout << "0) points [0]: " << x << " " << y << " " << z << std::endl;
-
-//            point = cs_record[count].operator*(point);
-//            point = pr_record[count].operator*(point);
-//            point = p1_record[count].operator*(point);
-//            point = c1_record[count].operator*(point);
-
-            rot = cs_record[count].getBasis(); trans = cs_record[count].getOrigin();
-            tempx = x * rot[0][0] + y * rot[0][1] + z * rot[0][2] + trans[0];
-            tempy = x * rot[1][0] + y * rot[1][1] + z * rot[1][2] + trans[1];
-            tempz = x * rot[2][0] + y * rot[2][1] + z * rot[2][2] + trans[2];
-            x = tempx; y = tempy; z = tempz;
-
-            if (p==0) std::cout << "1) points [0]: " << x << " " << y << " " << z << std::endl;
-
-            rot = pr_record[count].getBasis(); trans = pr_record[count].getOrigin();
-            tempx = x * rot[0][0] + y * rot[0][1] + z * rot[0][2] + trans[0];
-            tempy = x * rot[1][0] + y * rot[1][1] + z * rot[1][2] + trans[1];
-            tempz = x * rot[2][0] + y * rot[2][1] + z * rot[2][2] + trans[2];
-            x = tempx; y = tempy; z = tempz;
-
-            if (p==0) std::cout << "2) points [0]: " << x << " " << y << " " << z << std::endl;
-
-            rot = p1_record[count].getBasis().transpose(); trans = p1_record[count].getOrigin();
-            x -= trans[0]; y-= trans[1]; z -=trans[2];
-            tempx = x * rot[0][0] + y * rot[0][1] + z * rot[0][2]; // - trans[0];
-            tempy = x * rot[1][0] + y * rot[1][1] + z * rot[1][2]; // - trans[1];
-            tempz = x * rot[2][0] + y * rot[2][1] + z * rot[2][2]; // - trans[2];
-            x = tempx; y = tempy; z = tempz;
-
-            if (p==0) std::cout << "3) points [0]: " << x << " " << y << " " << z << std::endl;
-
-            rot = c1_record[count].getBasis().transpose(); trans = c1_record[count].getOrigin();
-            x -= trans[0]; y-= trans[1]; z -=trans[2];
-            tempx = x * rot[0][0] + y * rot[0][1] + z * rot[0][2]; // - trans[0];
-            tempy = x * rot[1][0] + y * rot[1][1] + z * rot[1][2]; // - trans[1];
-            tempz = x * rot[2][0] + y * rot[2][1] + z * rot[2][2]; // - trans[2];
-            x = tempx; y = tempy; z = tempz;
-
-            if (p==0) std::cout << "4) points [0]: " << x << " " << y << " " << z << std::endl;
-
-
-            if (tempz<3) continue;
-
-            ci = camera_intrinsics[count];
-            tempx = x * ci[0][0] + y * ci[0][1] + z * ci[0][2];
-            tempy = x * ci[1][0] + y * ci[1][1] + z * ci[1][2];
-            tempz = x * ci[2][0] + y * ci[2][1] + z * ci [2][2];
-
-            tempx /= tempz;
-            tempy /= tempz;
-
-            if (p==0) std::cout << "5) points [0]: " << tempx << " " << tempy << " " << tempz << std::endl;
-
-            if (p==0) std::cout << "6) mask   [0]: " << !(tempx<0 || tempx>=img.cols || tempy<0 || tempy>=img.rows) << std::endl;
-
-            if (tempx<0 || tempx>=img.cols || tempy<0 || tempy>=img.rows) continue;
-
-            auto &color = img.at<cv::Vec3b>((int)tempy,(int)tempx);
+            if (! projectPoint(cloud[p], cloud[p+1], cloud[p+2], px, py, count, img.rows, img.cols) )
+                continue;
+            auto &color = img.at<cv::Vec3b>(py, px);
             uint32_tToBytes.value = getRGB[ labels[cont] ];
-            //else uint32_tToBytes.value = 0xff0000;
             color[0] = uint32_tToBytes.byte[0];
             color[1] = uint32_tToBytes.byte[1];
             color[2] = uint32_tToBytes.byte[2];
