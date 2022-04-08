@@ -1,0 +1,20 @@
+<launch>
+
+    <arg name="project" default="data_generator"/>
+
+    <!-- in order to omit type and timestamp on ROS logging format -->
+    <env name="ROSCONSOLE_FORMAT" value="${message}" />
+
+    <!-- impose to use the simulated time provided by the running rosbag -->
+    <param name="/use_sim_time" value="false" />
+
+    <!-- Parameters -->
+    <!--<rosparam file="$(arg project)/config/params.yaml" command="load" />-->
+
+    <!--- Run Rviz-->
+    <node pkg="rviz" type="rviz" name="$(arg project)_rviz" args="-d $(find data_generator)/rviz/data_generator.rviz" />
+
+    <!--- Run generator node-->
+    <node pkg="$(arg project)" type="$(arg project)_data_generator" name="$(arg project)_data_generator"    output="screen"     respawn="false"/>
+
+</launch>
