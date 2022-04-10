@@ -5,9 +5,25 @@
 #ifndef DATA_GENERATOR_MACRO_H
 #define DATA_GENERATOR_MACRO_H
 
+#include <tf/transform_datatypes.h>
+#include "transform_utils.h"
+#include<opencv2/opencv.hpp>
+
+
+/**************************** GENERAL DATA ****************************/
 
 std::string recipepath = "/home/fusy/Documents/bin2pcd/ros_ws/playback_recipe.txt";
 //std::string recipepath = "/home/fusy/Documents/bin2pcd/ros_ws/src/data_generator/playback_recipe.txt";
+
+float max_range = 21.0f;    //mt
+float min_range = 1.0f;     //mt
+float range_step = 2.0f;    // mt
+float angle_step = 20.0f;   //[degrees]
+
+int tot_ranges = (int) ((max_range - min_range) / range_step);
+int tot_angles = (int) (360 / angle_step);
+
+/**********************************************************************/
 
 uint32_t getRGB[] = {
         0x000000 , // 0 : noise
@@ -107,6 +123,154 @@ void build_msg_Fields(sensor_msgs::PointCloud2 &msg) {
 //    msg.point_step = sizeof(float) * 4;
 }
 
-//tf::Matrix3x3 camera_intrinsics(1266.417203046554, 0.0, 816.2670197447984, 0.0, 1266.417203046554, 491.50706579294757, 0.0, 0.0, 1.0);
+
+class CameraInfo {
+    std::vector<std::string> cam_paths;
+    std::vector<tf::Transform> cs_record;
+    std::vector<tf::Transform> pr_record;
+    std::vector<tf::Transform> p1_record;
+    std::vector<tf::Transform> c1_record;
+    std::vector<tf::Matrix3x3> camera_intrinsics;
+    std::string line;   // used to read things, just a temp string
+    tf::Transform tr;   // ditto
+    tf::Matrix3x3 ci;   // ditto
+
+public:
+
+    void reset() {
+        cam_paths.clear();
+        cs_record.clear();
+        pr_record.clear();
+        p1_record.clear();
+        c1_record.clear();
+        camera_intrinsics.clear();
+    }
+
+    void summary() {
+        std::cout << "cam paths: " << cam_paths.size() << ", records: " << cs_record.size() << std::endl;
+    }
+
+    void insertCamPath(std::ifstream &fin) {
+        std::getline(fin, line);
+        cam_paths.push_back(line);
+    }
+
+    void insertCsRecord(std::ifstream &fin) {
+        std::getline(fin, line);
+        fillTransformationMatrix(line, tr);
+        cs_record.push_back(tr);
+    }
+
+    void insertPrRecord(std::ifstream &fin) {
+        std::getline(fin, line);
+        fillTransformationMatrix(line, tr);
+        pr_record.push_back(tr);
+    }
+
+    void insertC1Record(std::ifstream &fin) {
+        std::getline(fin, line);
+        fillTransformationMatrix(line, tr);
+        c1_record.push_back(tr);
+    }
+
+    void insertP1Record(std::ifstream &fin) {
+        std::getline(fin, line);
+        fillTransformationMatrix(line, tr);
+        p1_record.push_back(tr);
+    }
+
+    void insertCiRecord(std::ifstream &fin) {
+        std::getline(fin, line);
+        fillCameraIntrinsicsMatrix(line, ci);
+        camera_intrinsics.push_back(ci);
+    }
+
+    void loadData(std::ifstream &fin) {
+        insertCamPath(fin);     // camera image path
+        insertCiRecord(fin);    // camera instrinsics
+        insertCsRecord(fin);    // records
+        insertPrRecord(fin);
+        insertP1Record(fin);
+        insertC1Record(fin);
+    }
+
+    bool projectPoint(float x, float y, float z, int &px, int &py, int count, int rows, int cols) {
+        float tempx, tempy, tempz;
+        tf::Matrix3x3 rot;
+        tf::Vector3 trans;
+
+        rot = cs_record[count].getBasis(); trans = cs_record[count].getOrigin();
+        tempx = x * rot[0][0] + y * rot[0][1] + z * rot[0][2] + trans[0];
+        tempy = x * rot[1][0] + y * rot[1][1] + z * rot[1][2] + trans[1];
+        tempz = x * rot[2][0] + y * rot[2][1] + z * rot[2][2] + trans[2];
+        x = tempx; y = tempy; z = tempz;
+
+
+        rot = pr_record[count].getBasis(); trans = pr_record[count].getOrigin();
+        tempx = x * rot[0][0] + y * rot[0][1] + z * rot[0][2] + trans[0];
+        tempy = x * rot[1][0] + y * rot[1][1] + z * rot[1][2] + trans[1];
+        tempz = x * rot[2][0] + y * rot[2][1] + z * rot[2][2] + trans[2];
+        x = tempx; y = tempy; z = tempz;
+
+
+        rot = p1_record[count].getBasis().transpose(); trans = p1_record[count].getOrigin();
+        x -= (float) trans[0]; y -= (float) trans[1]; z -= (float) trans[2];
+        tempx = x * rot[0][0] + y * rot[0][1] + z * rot[0][2];
+        tempy = x * rot[1][0] + y * rot[1][1] + z * rot[1][2];
+        tempz = x * rot[2][0] + y * rot[2][1] + z * rot[2][2];
+        x = tempx; y = tempy; z = tempz;
+
+
+        rot = c1_record[count].getBasis().transpose(); trans = c1_record[count].getOrigin();
+        x -= (float) trans[0]; y -= (float) trans[1]; z -= (float) trans[2];
+        tempx = x * rot[0][0] + y * rot[0][1] + z * rot[0][2];
+        tempy = x * rot[1][0] + y * rot[1][1] + z * rot[1][2];
+        tempz = x * rot[2][0] + y * rot[2][1] + z * rot[2][2];
+        x = tempx; y = tempy; z = tempz;
+
+        if (tempz<3) return false;
+
+        ci = camera_intrinsics[count];
+        tempx = x * ci[0][0] + y * ci[0][1] + z * ci[0][2];
+        tempy = x * ci[1][0] + y * ci[1][1] + z * ci[1][2];
+        tempz = x * ci[2][0] + y * ci[2][1] + z * ci[2][2];
+
+
+        px = (int) std::roundf(tempx / tempz);
+        py = (int) std::roundf(tempy / tempz);
+
+
+        if (px<0 || px>=cols || py<0 || py>=rows) return false;
+
+        return true;
+    }
+
+    std::string getPath(int count) {
+        assert(count>=0 && count < cam_paths.size());
+        return cam_paths[count];
+    }
+
+    void paintToImage(int count, std::vector<float> &cloud, std::vector<uint8_t> &labels, std::string &window_name) {
+        cv::Mat img = cv::imread(cam_paths[count]);
+
+        int px, py;
+        int skipped_points=0;
+
+        for (int p=0, cont=0; p<cloud.size(); p+=4, cont++) {
+
+            if ( ! projectPoint(cloud[p], cloud[p+1], cloud[p+2], px, py, count, img.rows, img.cols) ) {
+                skipped_points++;
+                continue;
+            }
+            // draw the circle
+            uint32_tToBytes.value = getRGB[ labels[cont] ];
+            cv::circle(img, cv::Point(px, py), 5, cv::Scalar(uint32_tToBytes.byte[0],uint32_tToBytes.byte[1],uint32_tToBytes.byte[2]),-1,8,0);
+
+        }
+
+        cv::imshow(window_name, img);
+        cv::waitKey(1);
+    }
+};
 
 #endif //DATA_GENERATOR_MACRO_H

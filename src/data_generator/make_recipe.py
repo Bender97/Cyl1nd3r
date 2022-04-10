@@ -47,10 +47,10 @@ def mat3x32str(mat):
 
 nusc = NuScenes(version='v1.0-mini', dataroot='/home/fusy/Documents/bin2pcd/v1.0-mini', verbose=True)
 
-print(nusc.sample[0]['data']['LIDAR_TOP'])
-
+root_path 	= "/home/fusy/Documents/bin2pcd/v1.0-mini/"
 
 f = open("playback_recipe.txt", "w")
+
 
 for my_sample in tqdm.tqdm(nusc.sample):
 	sample_data_token 				= my_sample['data']['LIDAR_TOP']
@@ -62,7 +62,7 @@ for my_sample in tqdm.tqdm(nusc.sample):
 	camera_token_back_right 		= my_sample['data']['CAM_BACK_RIGHT']
 
 
-
+	# LOAD camera tokens
 	cam_front = nusc.get('sample_data', camera_token_front)
 	cam_front_left = nusc.get('sample_data', camera_token_front_left)
 	cam_front_right = nusc.get('sample_data', camera_token_front_right)
@@ -71,63 +71,63 @@ for my_sample in tqdm.tqdm(nusc.sample):
 	cam_back_right = nusc.get('sample_data', camera_token_back_right)
 
 
-	# Retrieve sensor & pose records
-	sd_record = nusc.get('sample_data', sample_data_token)
-	cs_record = nusc.get('calibrated_sensor', sd_record['calibrated_sensor_token'])
-
-
-	root_path 	= "/home/fusy/Documents/bin2pcd/v1.0-mini/"
+	# LOAD pointcloud and labels from bin files
 	pcl_path    = root_path + nusc.get('sample_data', sample_data_token)['filename']
 	labels_path = root_path + nusc.get('lidarseg', sample_data_token)['filename']
 
-	ep_record = nusc.get('ego_pose', sd_record['ego_pose_token'])
-
 
 	# MATRICES for image projection
+	sd_record = nusc.get('sample_data', sample_data_token)
 	# 1
-	#cs_record_1 = nusc.get('calibrated_sensor', sd_record['calibrated_sensor_token'])
+	cs_record = nusc.get('calibrated_sensor', sd_record['calibrated_sensor_token'])
 	# 2
-	#poserecord_2 = nusc.get('ego_pose', sd_record['ego_pose_token'])
-	# 3
-	poserecord_3 = nusc.get('ego_pose', cam_front['ego_pose_token'])
+	ep_record = nusc.get('ego_pose', sd_record['ego_pose_token'])
+	# 3 these will be loaded after: each camera has its own
+	#poserecord_3 = nusc.get('ego_pose', cam_front['ego_pose_token'])
 	# 4
-	cs_record_4 = nusc.get('calibrated_sensor', cam_front['calibrated_sensor_token'])
+	#cs_record_4 = nusc.get('calibrated_sensor', cam_front['calibrated_sensor_token'])
 
 
-
+	############# COMPUTE VEHICLE EGO POSE #############
 	cs_transmat = Quaternion(cs_record['rotation']).transformation_matrix
 	cs_transmat[:3, 3] = np.array(cs_record['translation'])
 
 	ep_transmat = Quaternion(ep_record['rotation']).transformation_matrix
 	ep_transmat[:3, 3] = np.array(ep_record['translation'])
 
+
 	mult = np.matmul(np.linalg.inv(cs_transmat), np.matmul(ep_transmat, cs_transmat))
+	##################### FINISHED #####################
 
 
-	cam_trans = Quaternion(cs_record['rotation']).transformation_matrix
-	cam_trans[:3, 3] = np.array(cs_record['translation'])
 
+	################# WRITE TO RECIPE #################
 
+	# pointcloud and labels
 	f.write(pcl_path + "\n")
 	f.write(labels_path + "\n")
-	for cam in [cam_front, cam_front_left, cam_front_right, cam_back, cam_back_left, cam_back_right]:
-		f.write(root_path + cam['filename'] + "\n")
 
+	# ego pose
 	f.write(mat4x42str(mult) + "\n")
 
 
-	pr_transmat = Quaternion(poserecord_3['rotation']).transformation_matrix
-	pr_transmat[:3, 3] = np.array(poserecord_3['translation'])
-
-	c4_transmat = Quaternion(cs_record_4['rotation']).transformation_matrix
-	c4_transmat[:3, 3] = np.array(cs_record_4['translation'])
 
 
 
-	f.write(  mat3x32str(cs_record_4['camera_intrinsic']) + "\n")
-	f.write(  mat4x42str(cs_transmat) 	+ "\n")
-	f.write(  mat4x42str(ep_transmat) 	+ "\n")
-	f.write(  mat4x42str(pr_transmat) 	+ "\n")
-	f.write(  mat4x42str(c4_transmat) 	+ "\n")
+	for cam in [cam_front, cam_front_left, cam_front_right, cam_back, cam_back_left, cam_back_right]:
+		poserecord_3 = nusc.get('ego_pose', cam['ego_pose_token'])
+		pr_transmat = Quaternion(poserecord_3['rotation']).transformation_matrix
+		pr_transmat[:3, 3] = np.array(poserecord_3['translation'])
+
+		cs_record_4 = nusc.get('calibrated_sensor', cam['calibrated_sensor_token'])
+		c4_transmat = Quaternion(cs_record_4['rotation']).transformation_matrix
+		c4_transmat[:3, 3] = np.array(cs_record_4['translation'])
+
+		f.write(root_path + cam['filename'] + "\n")
+		f.write(  mat3x32str(cs_record_4['camera_intrinsic']) + "\n")
+		f.write(  mat4x42str(cs_transmat) 	+ "\n")
+		f.write(  mat4x42str(ep_transmat) 	+ "\n")
+		f.write(  mat4x42str(pr_transmat) 	+ "\n")
+		f.write(  mat4x42str(c4_transmat) 	+ "\n")
 
 f.close()

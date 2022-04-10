@@ -21,60 +21,23 @@
 #include "macro.h"
 #include<opencv2/opencv.hpp>
 
-std::vector<std::string> cam_front_paths;
-std::vector<std::string> cam_front_left_paths;
-std::vector<std::string> cam_front_right_paths;
-std::vector<std::string> cam_back_paths;
-std::vector<std::string> cam_back_left_paths;
-std::vector<std::string> cam_back_right_paths;
+#include "transform_utils.h"
 
-float max_range = 21.0f;//mt
-float min_range = 1.0f;//mt
-float range_step = 2.0f;// mt
-float angle_step = 20.0f; //[degrees]
-
-int tot_ranges = (int) ((max_range - min_range) / range_step);
-int tot_angles = (int) (360 / angle_step);
 
 float range=1, angle = 0;
 float rad_angle;
 float x, y, z=0.0f;
 std::vector<uint32_t> colors;
 
-std::vector<tf::Transform> cs_record;
-std::vector<tf::Transform> pr_record;
-std::vector<tf::Transform> p1_record;
-std::vector<tf::Transform> c1_record;
+//CameraInfo cam_front;
+//CameraInfo cam_front_left;
+//CameraInfo cam_front_right;
+//CameraInfo cam_back;
+//CameraInfo cam_back_left;
+//CameraInfo cam_back_right;
 
-std::vector<tf::Matrix3x3> camera_intrinsics;
+std::vector<CameraInfo> cameras(6);
 
-void fillTransformationMatrix(std::string &line, tf::Transform &tr) {
-    std::stringstream ss(line);
-    float vals[12];
-    std::string str;
-
-    for (int i=0; i<12; i++) {
-        std::getline(ss, str, ' ');
-        vals[i] = stof(str);
-    }
-
-    tr.setBasis( tf::Matrix3x3(vals[0], vals[1], vals[2], vals[4], vals[5], vals[6], vals[8], vals[9], vals[10]));
-    tr.setOrigin( tf::Vector3(vals[3], vals[7], vals[11]));
-
-}
-
-void fillCameraIntrinsicsMatrix(std::string &line, tf::Matrix3x3 &ci) {
-    std::stringstream ss(line);
-    float vals[9];
-    std::string str;
-
-    for (int i=0; i<9; i++) {
-        std::getline(ss, str, ' ');
-        vals[i] = stof(str);
-    }
-
-    ci.setValue( vals[0], vals[1], vals[2], vals[3], vals[4], vals[5], vals[6], vals[7], vals[8]);
-}
 
 void loadLidarScans(std::string &lidarpath, std::vector<float> &scans) {
     std::ifstream fin(lidarpath, std::ios::binary);
@@ -107,26 +70,31 @@ void readPaths(std::string recipepath, std::vector<std::string> &scanpaths, std:
                std::vector<tf::Transform> &poses) {
     scanpaths.clear();
     labelpaths.clear();
-    cam_front_paths.clear();
-    cam_front_left_paths.clear();
-    cam_front_right_paths.clear();
-    cam_back_paths.clear();
-    cam_back_left_paths.clear();
-    cam_back_right_paths.clear();
     poses.clear();
 
-    cs_record.clear();
-    pr_record.clear();
-    p1_record.clear();
-    c1_record.clear();
+    for (int i=0; i<6; i++) cameras[i].reset();
 
     std::string line;
     std::stringstream ss;
 
     tf::Transform tr;
-    tf::Matrix3x3 ci;
 
     std::ifstream fin(recipepath);
+
+    /** struct:
+     * scanpath
+     * label path
+     * pose transform
+     *  cam_path
+     *  cam_intrinsics
+     *  cam_cs
+     *  cam_pr
+     *  cam_p1
+     *  cam_c1
+     * (.. repeat ..)
+     * **/
+
+
     while(true) {
         if (!std::getline(fin, line)) break;
         scanpaths.push_back(line);
@@ -135,51 +103,17 @@ void readPaths(std::string recipepath, std::vector<std::string> &scanpaths, std:
         labelpaths.push_back(line);
 
         std::getline(fin, line);
-        cam_front_paths.push_back(line);
-
-        std::getline(fin, line);
-        cam_front_left_paths.push_back(line);
-
-        std::getline(fin, line);
-        cam_front_right_paths.push_back(line);
-
-        std::getline(fin, line);
-        cam_back_paths.push_back(line);
-
-        std::getline(fin, line);
-        cam_back_left_paths.push_back(line);
-
-        std::getline(fin, line);
-        cam_back_right_paths.push_back(line);
-
-        std::getline(fin, line);
         fillTransformationMatrix(line, tr);
         poses.push_back(tr);
 
-        // camera intrinsics
-        std::getline(fin, line);
-        fillCameraIntrinsicsMatrix(line, ci);
-        camera_intrinsics.push_back(ci);
 
-        // records
-        std::getline(fin, line);
-        fillTransformationMatrix(line, tr);
-        cs_record.push_back(tr);
+        for (int i=0; i<6; i++) cameras[i].loadData(fin);
 
-        std::getline(fin, line);
-        fillTransformationMatrix(line, tr);
-        pr_record.push_back(tr);
-
-        std::getline(fin, line);
-        fillTransformationMatrix(line, tr);
-        p1_record.push_back(tr);
-
-        std::getline(fin, line);
-        fillTransformationMatrix(line, tr);
-        c1_record.push_back(tr);
 
     }
     fin.close();
+
+//    cam_front.summary();
 }
 
 boost::optional<sensor_msgs::Image>
@@ -298,51 +232,7 @@ void updateLabels(std::vector<float> &cloud, std::vector<uint32_t> &labels) {
     }
 }
 
-bool projectPoint(float x, float y, float z, int &px, int &py, int count, int rows, int cols) {
-    float tempx, tempy, tempz;
-    tf::Matrix3x3 rot;
-    tf::Vector3 trans;
 
-    tf::Matrix3x3 ci;
-    rot = cs_record[count].getBasis(); trans = cs_record[count].getOrigin();
-    tempx = x * rot[0][0] + y * rot[0][1] + z * rot[0][2] + trans[0];
-    tempy = x * rot[1][0] + y * rot[1][1] + z * rot[1][2] + trans[1];
-    tempz = x * rot[2][0] + y * rot[2][1] + z * rot[2][2] + trans[2];
-    x = tempx; y = tempy; z = tempz;
-
-    rot = pr_record[count].getBasis(); trans = pr_record[count].getOrigin();
-    tempx = x * rot[0][0] + y * rot[0][1] + z * rot[0][2] + trans[0];
-    tempy = x * rot[1][0] + y * rot[1][1] + z * rot[1][2] + trans[1];
-    tempz = x * rot[2][0] + y * rot[2][1] + z * rot[2][2] + trans[2];
-    x = tempx; y = tempy; z = tempz;
-
-    rot = p1_record[count].getBasis().transpose(); trans = p1_record[count].getOrigin();
-    x -= (float) trans[0]; y -= (float) trans[1]; z -= (float) trans[2];
-    tempx = x * rot[0][0] + y * rot[0][1] + z * rot[0][2];
-    tempy = x * rot[1][0] + y * rot[1][1] + z * rot[1][2];
-    tempz = x * rot[2][0] + y * rot[2][1] + z * rot[2][2];
-    x = tempx; y = tempy; z = tempz;
-
-    rot = c1_record[count].getBasis().transpose(); trans = c1_record[count].getOrigin();
-    x -= (float) trans[0]; y -= (float) trans[1]; z -= (float) trans[2];
-    tempx = x * rot[0][0] + y * rot[0][1] + z * rot[0][2];
-    tempy = x * rot[1][0] + y * rot[1][1] + z * rot[1][2];
-    tempz = x * rot[2][0] + y * rot[2][1] + z * rot[2][2];
-    x = tempx; y = tempy; z = tempz;
-    if (tempz<3) return false;
-
-    ci = camera_intrinsics[count];
-    tempx = x * ci[0][0] + y * ci[0][1] + z * ci[0][2];
-    tempy = x * ci[1][0] + y * ci[1][1] + z * ci[1][2];
-    tempz = x * ci[2][0] + y * ci[2][1] + z * ci[2][2];
-
-    px = (int) std::roundf(tempx / tempz);
-    py = (int) std::roundf(tempy / tempz);
-
-    if (px<0 || px>=cols || py<0 || py>=rows) return false;
-
-    return true;
-}
 
 int main(int argc, char **argv)
 {
@@ -401,6 +291,9 @@ int main(int argc, char **argv)
     ros::Rate polling(1);
     while(camera_front_pub.getNumSubscribers()==0) polling.sleep();
 
+    std::string cam_front_window_name = "cam_front";
+    std::string cam_front_left_window_name = "cam_front_left";
+
     while (ros::ok())
     {
 
@@ -423,7 +316,7 @@ int main(int argc, char **argv)
         grid_pub.publish(grid_msg);
 
 
-        auto camera_front_msg = readImageFile(cam_front_paths[count]).value();
+        auto camera_front_msg = readImageFile(cameras[0].getPath(count)).value();
         camera_front_msg.header.frame_id = "camera_front";
         camera_front_msg.header.stamp = stamp;
         camera_front_pub.publish(camera_front_msg);
@@ -431,24 +324,8 @@ int main(int argc, char **argv)
 
         MapTrans.stamp_ = stamp;
 
-        cv::Mat img = cv::imread(cam_front_paths[count]);
-
-        int px, py;
-
-        for (int p=0, cont=0; p<cloud.size(); p+=4, cont++) {
-
-            if (! projectPoint(cloud[p], cloud[p+1], cloud[p+2], px, py, count, img.rows, img.cols) )
-                continue;
-            auto &color = img.at<cv::Vec3b>(py, px);
-            uint32_tToBytes.value = getRGB[ labels[cont] ];
-            color[0] = uint32_tToBytes.byte[0];
-            color[1] = uint32_tToBytes.byte[1];
-            color[2] = uint32_tToBytes.byte[2];
-
-        }
-
-        cv::imshow("name", img);
-        cv::waitKey(1);
+        cameras[0].paintToImage(count, cloud, labels, cam_front_window_name);
+        cameras[1].paintToImage(count, cloud, labels, cam_front_left_window_name);
 
 
         MapTrans.setData(poses[count]);
