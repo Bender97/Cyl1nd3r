@@ -56,12 +56,12 @@ void loadLidarScans(std::string &lidarpath, std::vector<float> &scans) {
     fin.close();
 }
 
-void loadLabels(std::string &labelpath, std::vector<uint8_t> &labels) {
+void loadLabels(std::string &labelpath, std::vector<uint32_t> &labels) {
     uint8_t f;
     std::ifstream fin(labelpath, std::ios::binary);
     labels.clear();
     while (fin.read(reinterpret_cast<char*>(&f), sizeof(uint8_t))) {
-        labels.push_back(f);
+        labels.push_back(getRGB[f]);
     }
     fin.close();
 }
@@ -134,32 +134,6 @@ readImageFile(const std::string &filePath) noexcept
     return boost::none;
 }
 
-void cloudToMsg(std::vector<float> &cloud, std::vector<uint8_t> &labels, sensor_msgs::PointCloud2 &msg, int seq, ros::Time &stamp ) {
-    msg.header.seq = seq;
-    msg.header.stamp = stamp;
-    msg.width = cloud.size()/4;
-    msg.data.clear();
-    for (int i=0; i<cloud.size(); i++) {
-        floatToBytes.value = cloud[i];
-        msg.data.push_back(floatToBytes.byte[0]);
-        msg.data.push_back(floatToBytes.byte[1]);
-        msg.data.push_back(floatToBytes.byte[2]);
-        msg.data.push_back(floatToBytes.byte[3]);
-        if (i%4==3) {
-
-            int id = labels[(i-3) >> 2];
-            if (id>0 && id<=31) uint32_tToBytes.value = getRGB[ id ];
-            else uint32_tToBytes.value = 0xff0000;
-
-            msg.data.push_back(uint32_tToBytes.byte[0]);
-            msg.data.push_back(uint32_tToBytes.byte[1]);
-            msg.data.push_back(uint32_tToBytes.byte[2]);
-            msg.data.push_back(uint32_tToBytes.byte[3]);
-        }
-    }
-
-    msg.row_step = msg.data.size();
-}
 void cloudToMsg(std::vector<float> &cloud, std::vector<uint32_t> &labels, sensor_msgs::PointCloud2 &msg, int seq, ros::Time &stamp ) {
     msg.header.seq = seq;
     msg.header.stamp = stamp;
@@ -269,7 +243,7 @@ int main(int argc, char **argv)
 
 
     std::vector<float> cloud;
-    std::vector<uint8_t> labels;
+    std::vector<uint32_t> labels;
     sensor_msgs::Image img;
 
     // compute all colors
@@ -324,7 +298,7 @@ int main(int argc, char **argv)
 
         MapTrans.stamp_ = stamp;
 
-        cameras[0].paintToImage(count, cloud, labels, cam_front_window_name);
+        cameras[0].paintToImage(count, grid_cloud, colors, cam_front_window_name);
         cameras[1].paintToImage(count, cloud, labels, cam_front_left_window_name);
 
 

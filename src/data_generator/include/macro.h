@@ -18,7 +18,7 @@ std::string recipepath = "/home/fusy/Documents/bin2pcd/ros_ws/playback_recipe.tx
 float max_range = 21.0f;    //mt
 float min_range = 1.0f;     //mt
 float range_step = 2.0f;    // mt
-float angle_step = 20.0f;   //[degrees]
+float angle_step = 1.0f;   //[degrees]
 
 int tot_ranges = (int) ((max_range - min_range) / range_step);
 int tot_angles = (int) (360 / angle_step);
@@ -250,7 +250,7 @@ public:
         return cam_paths[count];
     }
 
-    void paintToImage(int count, std::vector<float> &cloud, std::vector<uint8_t> &labels, std::string &window_name) {
+    void paintToImage(int count, std::vector<float> &cloud, std::vector<uint32_t> &labels, std::string &window_name) {
         cv::Mat img = cv::imread(cam_paths[count]);
 
         int px, py;
@@ -263,8 +263,9 @@ public:
                 continue;
             }
             // draw the circle
-            uint32_tToBytes.value = getRGB[ labels[cont] ];
-            cv::circle(img, cv::Point(px, py), 5, cv::Scalar(uint32_tToBytes.byte[0],uint32_tToBytes.byte[1],uint32_tToBytes.byte[2]),-1,8,0);
+            //uint32_tToBytes.value = getRGB[ labels[cont] ];
+            uint32_tToBytes.value = labels[cont];
+            cv::circle(img, cv::Point(px, py), 5, cv::Scalar(uint32_tToBytes.byte[2],uint32_tToBytes.byte[1],uint32_tToBytes.byte[0]),-1,8,0);
 
         }
 
