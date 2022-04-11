@@ -29,13 +29,6 @@ float rad_angle;
 float x, y, z=0.0f;
 std::vector<uint32_t> colors;
 
-//CameraInfo cam_front;
-//CameraInfo cam_front_left;
-//CameraInfo cam_front_right;
-//CameraInfo cam_back;
-//CameraInfo cam_back_left;
-//CameraInfo cam_back_right;
-
 std::vector<CameraInfo> cameras(6);
 
 
@@ -80,20 +73,11 @@ void readPaths(std::string recipepath, std::vector<std::string> &scanpaths, std:
     tf::Transform tr;
 
     std::ifstream fin(recipepath);
-
-    /** struct:
-     * scanpath
-     * label path
-     * pose transform
-     *  cam_path
-     *  cam_intrinsics
-     *  cam_cs
-     *  cam_pr
-     *  cam_p1
-     *  cam_c1
-     * (.. repeat ..)
+    if (!fin) { std::cout << "ERROR OPENING recipe file: " << recipepath << std::endl; return; }
+    /** struct of the recipe file:
+     * scanpath  \n  label_path  \n  pose_transform
+     * [ cam_path  \n  cam_intrinsics  \n  cam_cs  \n  cam_pr  \n  cam_p1  \n  cam_c1 ] ( ..repeat.. )
      * **/
-
 
     while(true) {
         if (!std::getline(fin, line)) break;
@@ -106,14 +90,9 @@ void readPaths(std::string recipepath, std::vector<std::string> &scanpaths, std:
         fillTransformationMatrix(line, tr);
         poses.push_back(tr);
 
-
         for (int i=0; i<6; i++) cameras[i].loadData(fin);
-
-
     }
     fin.close();
-
-//    cam_front.summary();
 }
 
 boost::optional<sensor_msgs::Image>
@@ -161,18 +140,15 @@ void cloudToMsg(std::vector<float> &cloud, std::vector<uint32_t> &labels, sensor
 
 void initGridCloud(std::vector<float> &cloud, std::vector<uint32_t> &labels) {
     cloud.clear();
-    //labels.clear();
-
     for (;angle<360; angle+=angle_step) {
         for (range=min_range; range<max_range; range+=range_step) {
             rad_angle = angle * M_PI / 180.0f;
             x = range * std::cos(rad_angle);
             y = range * std::sin(rad_angle);
-            cloud.push_back(x);
-            cloud.push_back(y);
-            cloud.push_back(z);
-            cloud.push_back(1.0f);
-            //labels.push_back(31);
+            cloud.push_back(x);         // x
+            cloud.push_back(y);         // y
+            cloud.push_back(-2.0f);     // z
+            cloud.push_back(1.0f);      // r
         }
     }
 
@@ -210,104 +186,83 @@ void updateLabels(std::vector<float> &cloud, std::vector<uint32_t> &labels) {
 
 int main(int argc, char **argv)
 {
-    ros::init(argc, argv, "talker");
+    ros::init(argc, argv, "nuscenes_data_player");
+    ros::NodeHandle n;
 
     tf::StampedTransform MapTrans;
     tf::TransformBroadcaster tfBroadcaster;
-    MapTrans.frame_id_ = "map";
-    MapTrans.child_frame_id_ = "velodyne";
+    sensor_msgs::PointCloud2 lidar_msg;
+    sensor_msgs::Image camera_front_msg;
 
-    ros::NodeHandle n;
-    int rate;
-
-    n.param<int>("data_generator/rate", rate, 2);
-
-
-    ros::Publisher pointcloud_pub = n.advertise<sensor_msgs::PointCloud2>("/velodyne_points", 1000);
-    ros::Publisher grid_pub = n.advertise<sensor_msgs::PointCloud2>("/grid_points", 1000);
+    ros::Publisher pointcloud_pub   = n.advertise<sensor_msgs::PointCloud2>("/velodyne_points", 1000);
+    ros::Publisher grid_pub         = n.advertise<sensor_msgs::PointCloud2>("/grid_points", 1000);
     ros::Publisher camera_front_pub = n.advertise<sensor_msgs::Image>("/camera_front", 1000);
-    sensor_msgs::PointCloud2 msg;
-    sensor_msgs::PointCloud2 grid_msg;
-    build_msg_Fields(msg);
 
-    std::vector<float>  grid_cloud;
-    std::vector<uint32_t>    grid_labels;
-    build_msg_Fields(grid_msg);
-    initGridCloud(grid_cloud, grid_labels);
-
+    std::vector<float>      grid_cloud, lidar_cloud;
+    std::vector<uint32_t>   grid_labels, lidar_labels;
     std::vector<std::string> scanpaths, labelpaths;
-
     std::vector<tf::Transform> poses;
 
+    // initialize
+    build_msg_Fields(lidar_msg);
+    initGridCloud(grid_cloud, grid_labels);
+    MapTrans.frame_id_ = "map";
+    MapTrans.child_frame_id_ = "velodyne";
+    // read from recipe file
     readPaths(recipepath, scanpaths, labelpaths, poses);
 
 
-    std::vector<float> cloud;
-    std::vector<uint32_t> labels;
-    sensor_msgs::Image img;
 
     // compute all colors
-
     int tot_cells = ((max_range - min_range)*range_step) * (360.0f / angle_step);
-
-    std::cout << "TOT_CELLS: " << tot_cells << std::endl;
-
     colors.resize(tot_cells);
     for (auto &color: colors) color =
                 (( (int8_t) (100 + (double)std::rand() / RAND_MAX * 155) )<< 16 ) +
                 (( (int8_t) (100 + (double)std::rand() / RAND_MAX * 155)) << 8) +
                    (int8_t) (100 + (double)std::rand() / RAND_MAX * 155);
 
-    ros::Rate loop_rate(rate);
-    int count = 0;
 
 
     ros::Rate polling(1);
     while(camera_front_pub.getNumSubscribers()==0) polling.sleep();
 
-    std::string cam_front_window_name = "cam_front";
-    std::string cam_front_left_window_name = "cam_front_left";
+    ros::Rate loop_rate(1);
+    int count = 0;
 
     while (ros::ok())
     {
-
-
         ros::Time stamp =  ros::Time::now();
 
         std::string lidarpath = scanpaths[count];
-        loadLidarScans(lidarpath, cloud);
+        loadLidarScans(lidarpath, lidar_cloud);
 
         std::string labelpath = labelpaths[count];
-        loadLabels(labelpath, labels);
+        loadLabels(labelpath, lidar_labels);
 
-        updateLabels(cloud, grid_labels);
+        updateLabels(lidar_cloud, grid_labels);
 
-        cloudToMsg(cloud, grid_labels, msg, count, stamp);
-        pointcloud_pub.publish(msg);
+        cloudToMsg(lidar_cloud, grid_labels, lidar_msg, count, stamp);
+        pointcloud_pub.publish(lidar_msg);
 
+        cloudToMsg(grid_cloud, colors, lidar_msg, count, stamp);
+        grid_pub.publish(lidar_msg);
 
-        cloudToMsg(grid_cloud, colors, grid_msg, count, stamp);
-        grid_pub.publish(grid_msg);
+        // publish an image (to be visible from rviz)
+//        camera_front_msg = readImageFile(cameras[0].getPath(count)).value();
+//        camera_front_msg.header.frame_id = "camera_front";
+//        camera_front_msg.header.stamp = stamp;
+//        camera_front_pub.publish(camera_front_msg);
 
-
-        auto camera_front_msg = readImageFile(cameras[0].getPath(count)).value();
-        camera_front_msg.header.frame_id = "camera_front";
-        camera_front_msg.header.stamp = stamp;
-        camera_front_pub.publish(camera_front_msg);
-
-
-        MapTrans.stamp_ = stamp;
-
+        // paint clouds to image (using cv::imshow)
         cameras[0].paintToImage(count, grid_cloud, colors, cam_front_window_name);
-        cameras[1].paintToImage(count, cloud, labels, cam_front_left_window_name);
+        cameras[1].paintToImage(count, lidar_cloud, lidar_labels, cam_front_left_window_name);
 
-
+        // send vehicle ego pose
+        MapTrans.stamp_ = stamp;
         MapTrans.setData(poses[count]);
-
         tfBroadcaster.sendTransform(MapTrans);
 
         ROS_INFO("published cloud %d", count);
-
 
         ros::spinOnce();
 

@@ -18,10 +18,14 @@ std::string recipepath = "/home/fusy/Documents/bin2pcd/ros_ws/playback_recipe.tx
 float max_range = 21.0f;    //mt
 float min_range = 1.0f;     //mt
 float range_step = 2.0f;    // mt
-float angle_step = 1.0f;   //[degrees]
+float angle_step = 2.0f;   //[degrees]
 
 int tot_ranges = (int) ((max_range - min_range) / range_step);
 int tot_angles = (int) (360 / angle_step);
+
+
+std::string cam_front_window_name = "cam_front";
+std::string cam_front_left_window_name = "cam_front_left";
 
 /**********************************************************************/
 
@@ -120,7 +124,6 @@ void build_msg_Fields(sensor_msgs::PointCloud2 &msg) {
     msg.height = 1;
     msg.is_bigendian = false;
     msg.point_step = sizeof(float) * 5;
-//    msg.point_step = sizeof(float) * 4;
 }
 
 
@@ -144,10 +147,6 @@ public:
         p1_record.clear();
         c1_record.clear();
         camera_intrinsics.clear();
-    }
-
-    void summary() {
-        std::cout << "cam paths: " << cam_paths.size() << ", records: " << cs_record.size() << std::endl;
     }
 
     void insertCamPath(std::ifstream &fin) {
