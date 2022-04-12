@@ -11,6 +11,7 @@
 #include <iostream>
 #include <map>
 #include <regex>
+#include <tf/transform_listener.h>
 
 #include "CameraInfo.h"
 #include "macro.h"
@@ -41,7 +42,7 @@ void initGridCloud(std::vector<float> &cloud, std::vector<uint32_t> &labels) {
 }
 
 // set a point's color based on the sector of the cylinder the point belongs to
-void updateLabels(std::vector<float> &cloud, std::vector<uint32_t> &labels) {
+void sortInGrid_getLabels(std::vector<float> &cloud, std::vector<uint32_t> &labels) {
     labels.clear();
     labels.resize((int) cloud.size()/4);
 
@@ -80,6 +81,7 @@ int main(int argc, char **argv)
     sensor_msgs::Image camera_front_msg;
 
     ros::Publisher pointcloud_pub   = n.advertise<sensor_msgs::PointCloud2>("/velodyne_points", 1000);
+    ros::Publisher prev_pointcloud_pub   = n.advertise<sensor_msgs::PointCloud2>("/prev_velodyne_points", 1000);
     ros::Publisher grid_pub         = n.advertise<sensor_msgs::PointCloud2>("/grid_points", 1000);
     ros::Publisher camera_front_pub = n.advertise<sensor_msgs::Image>("/camera_front", 1000);
 
@@ -87,6 +89,9 @@ int main(int argc, char **argv)
     std::vector<uint32_t>   grid_labels, lidar_labels;
     std::vector<std::string> scanpaths, labelpaths;
     std::vector<tf::Transform> poses;
+
+//    tf::TransformListener listener;
+//    tf::StampedTransform transform;
 
     // initialize
     build_msg_Fields(lidar_msg);
@@ -113,6 +118,13 @@ int main(int argc, char **argv)
     ros::Rate loop_rate(1);
     int count = 0;
 
+    tf::Transform prev_t, curr_t, t;
+    tf::Vector3 trans;
+    tf::Matrix3x3 rot;
+    float tempx, tempy, tempz;
+    std::vector<float>      prev_cloud;
+    std::vector<uint32_t>   prev_labels;
+
     while (ros::ok())
     {
         ros::Time stamp =  ros::Time::now();
@@ -123,9 +135,10 @@ int main(int argc, char **argv)
         std::string labelpath = labelpaths[count];
         loadLabels(labelpath, lidar_labels);
 
-        updateLabels(lidar_cloud, grid_labels);
+        sortInGrid_getLabels(lidar_cloud, grid_labels);
 
-        cloudToMsg(lidar_cloud, grid_labels, lidar_msg, count, stamp);
+//        cloudToMsg(lidar_cloud, grid_labels, lidar_msg, count, stamp);
+        cloudToMsg(lidar_cloud, lidar_labels, lidar_msg, count, stamp);
         pointcloud_pub.publish(lidar_msg);
 
         cloudToMsg(grid_cloud, colors, lidar_msg, count, stamp);
@@ -146,11 +159,51 @@ int main(int argc, char **argv)
         MapTrans.setData(poses[count]);
         tfBroadcaster.sendTransform(MapTrans);
 
+        if (count>0) {
+            prev_t = poses[count-1];
+            curr_t.setOrigin(- poses[count].getOrigin());
+            curr_t.setBasis( poses[count].getBasis().transpose());
+//            prev_t.setOrigin(- poses[count-1].getOrigin());
+//            prev_t.setBasis( poses[count-1].getBasis().transpose());
+//            curr_t = poses[count];
+
+//            t = prev_t * curr_t;
+//            trans = t.getOrigin();
+//            rot = t.getBasis();
+
+            trans = prev_t.getOrigin();
+            rot = prev_t.getBasis();
+
+            for (size_t i=0; i<prev_cloud.size(); i+=4) {
+                x = prev_cloud[i]; y = prev_cloud[i+1]; z = prev_cloud[i+2];
+                prev_cloud[ i ] = rot[0][0]*x + rot[0][1]*y + rot[0][2]*z + trans[0];
+                prev_cloud[i+1] = rot[1][0]*x + rot[1][1]*y + rot[1][2]*z + trans[1];
+                prev_cloud[i+2] = rot[2][0]*x + rot[2][1]*y + rot[2][2]*z + trans[2];
+            }
+
+            trans = curr_t.getOrigin();
+            rot = curr_t.getBasis();
+
+            for (size_t i=0; i<prev_cloud.size(); i+=4) {
+                x = prev_cloud[i] + trans[0]; y = prev_cloud[i+1] + trans[1]; z = prev_cloud[i+2] + trans[2];
+                prev_cloud[ i ] = rot[0][0]*x + rot[0][1]*y + rot[0][2]*z;
+                prev_cloud[i+1] = rot[1][0]*x + rot[1][1]*y + rot[1][2]*z;
+                prev_cloud[i+2] = rot[2][0]*x + rot[2][1]*y + rot[2][2]*z;
+            }
+
+            cloudToMsg(prev_cloud, prev_labels, lidar_msg, count, stamp);
+            prev_pointcloud_pub.publish(lidar_msg);
+            
+        }
+
         ROS_INFO("published cloud %d", count);
 
         ros::spinOnce();
 
         loop_rate.sleep();
+
+        prev_cloud = lidar_cloud;
+        prev_labels = lidar_labels;
 
         ++count;
     }
