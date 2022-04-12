@@ -2,21 +2,19 @@
 #include <sensor_msgs/PointCloud2.h>
 #include <sensor_msgs/PointField.h>
 #include <sensor_msgs/Image.h>
-
-#include <cv_bridge/cv_bridge.h>
-#include <opencv2/imgcodecs.hpp>
-
 #include <tf/transform_datatypes.h>
 #include <tf/transform_broadcaster.h>
+
+#include <opencv2/imgcodecs.hpp>
 
 #include <algorithm>
 #include <iostream>
 #include <map>
 #include <regex>
 
-#include "macro.h"
-#include "transform_utils.h"
 #include "CameraInfo.h"
+#include "macro.h"
+#include "Reader.h"
 
 float range=1, angle = 0;
 float rad_angle;
@@ -25,113 +23,7 @@ std::vector<uint32_t> colors;
 
 std::vector<CameraInfo> cameras(6);
 
-
-void loadLidarScans(std::string &lidarpath, std::vector<float> &scans) {
-    std::ifstream fin(lidarpath, std::ios::binary);
-    scans.clear();
-    uint8_t skipCounter = 0;
-    float f;
-    while (fin.read(reinterpret_cast<char*>(&f), sizeof(float))) {
-        // skip 5th value of each point
-        if (skipCounter < 4) {
-            scans.push_back(f);
-            skipCounter++;
-        } else {
-            skipCounter = 0;
-        }
-    }
-    fin.close();
-}
-
-void loadLabels(std::string &labelpath, std::vector<uint32_t> &labels) {
-    uint8_t f;
-    std::ifstream fin(labelpath, std::ios::binary);
-    labels.clear();
-    while (fin.read(reinterpret_cast<char*>(&f), sizeof(uint8_t))) {
-        labels.push_back(getRGB[f]);
-    }
-    fin.close();
-}
-
-void readPaths(std::string recipepath, std::vector<std::string> &scanpaths, std::vector<std::string> &labelpaths,
-               std::vector<tf::Transform> &poses) {
-    scanpaths.clear();
-    labelpaths.clear();
-    poses.clear();
-
-    for (int i=0; i<6; i++) cameras[i].reset();
-
-    std::string line;
-    std::stringstream ss;
-
-    tf::Transform tr;
-
-    std::ifstream fin(recipepath);
-    if (!fin) { std::cout << "ERROR OPENING recipe file: " << recipepath << std::endl; return; }
-    /** struct of the recipe file:
-     * scanpath  \n  label_path  \n  pose_transform
-     * [ cam_path  \n  cam_intrinsics  \n  cam_cs  \n  cam_pr  \n  cam_p1  \n  cam_c1 ] ( ..repeat.. )
-     * **/
-
-    while(true) {
-        if (!std::getline(fin, line)) break;
-        scanpaths.push_back(line);
-
-        std::getline(fin, line);
-        labelpaths.push_back(line);
-
-        std::getline(fin, line);
-        fillTransformationMatrix(line, tr);
-        poses.push_back(tr);
-
-        for (int i=0; i<6; i++) cameras[i].loadData(fin);
-    }
-    fin.close();
-}
-
-boost::optional<sensor_msgs::Image>
-readImageFile(const std::string &filePath) noexcept
-{
-    cv::Mat image;
-    try {
-        image = imread(filePath.c_str(), cv::IMREAD_COLOR);
-        sensor_msgs::ImagePtr msg =
-                cv_bridge::CvImage(std_msgs::Header(), "bgr8", image).toImageMsg();
-
-        return boost::optional<sensor_msgs::Image>(*msg);
-
-    } catch (const std::exception& e) {
-        std::cout << (e.what()) << std::endl;
-    }
-
-    return boost::none;
-}
-
-void cloudToMsg(std::vector<float> &cloud, std::vector<uint32_t> &labels, sensor_msgs::PointCloud2 &msg, int seq, ros::Time &stamp ) {
-    msg.header.seq = seq;
-    msg.header.stamp = stamp;
-    msg.width = cloud.size()/4;
-    msg.data.clear();
-    for (int i=0; i<cloud.size(); i++) {
-        floatToBytes.value = cloud[i];
-        msg.data.push_back(floatToBytes.byte[0]);
-        msg.data.push_back(floatToBytes.byte[1]);
-        msg.data.push_back(floatToBytes.byte[2]);
-        msg.data.push_back(floatToBytes.byte[3]);
-        if (i%4==3) {
-
-            uint32_tToBytes.value = labels[i/4];
-
-            msg.data.push_back(uint32_tToBytes.byte[0]);
-            msg.data.push_back(uint32_tToBytes.byte[1]);
-            msg.data.push_back(uint32_tToBytes.byte[2]);
-            msg.data.push_back(uint32_tToBytes.byte[3]);
-        }
-    }
-
-    msg.row_step = msg.data.size();
-}
-
+// set the coordinate of each cylinder section (since in lidar frame, they're immutable)
 void initGridCloud(std::vector<float> &cloud, std::vector<uint32_t> &labels) {
     cloud.clear();
     for (;angle<360; angle+=angle_step) {
@@ -148,12 +40,12 @@ void initGridCloud(std::vector<float> &cloud, std::vector<uint32_t> &labels) {
 
 }
 
-
+// set a point's color based on the sector of the cylinder the point belongs to
 void updateLabels(std::vector<float> &cloud, std::vector<uint32_t> &labels) {
     labels.clear();
     labels.resize((int) cloud.size()/4);
 
-    for (int i=0, cont=0; i<cloud.size(); i+=4, cont++) {
+    for (size_t i=0, cont=0; i<cloud.size(); i+=4, cont++) {
         x = cloud[i];
         y = cloud[i+1];
 //        float z = cloud[i+2];
@@ -168,7 +60,6 @@ void updateLabels(std::vector<float> &cloud, std::vector<uint32_t> &labels) {
 
         angle_idx /= angle_step;
 
-//        int idx = angle_idx * tot_angles + range_idx;
         int idx = (int) angle_idx + range_idx * tot_ranges;
 
         labels[cont] = colors[idx];
@@ -203,11 +94,11 @@ int main(int argc, char **argv)
     MapTrans.frame_id_ = "map";
     MapTrans.child_frame_id_ = "velodyne";
     // read from recipe file
-    readPaths(recipepath, scanpaths, labelpaths, poses);
+    readPaths(recipepath, scanpaths, labelpaths, poses, cameras);
 
 
     // compute all colors
-    int tot_cells = ((max_range - min_range)*range_step) * (360.0f / angle_step);
+    int tot_cells = (int) std::roundf(((max_range - min_range)*range_step) * (360.0f / angle_step));
     colors.resize(tot_cells);
     for (auto &color: colors) color =
                 (( (int8_t) (100 + (double)std::rand() / RAND_MAX * 155) )<< 16 ) +

@@ -6,33 +6,29 @@
 #define DATA_GENERATOR_MACRO_H
 
 #include <tf/transform_datatypes.h>
-#include "transform_utils.h"
-#include <opencv2/opencv.hpp>
 #include <sensor_msgs/PointCloud2.h>
 #include <sensor_msgs/PointField.h>
-#include <sensor_msgs/Image.h>
-
 
 /**************************** GENERAL DATA ****************************/
 
 std::string recipepath = "/home/fusy/Documents/bin2pcd/ros_ws/playback_recipe.txt";
 //std::string recipepath = "/home/fusy/Documents/bin2pcd/ros_ws/src/data_generator/playback_recipe.txt";
 
-float max_range = 21.0f;    //mt
-float min_range = 1.0f;     //mt
-float range_step = 2.0f;    // mt
-float angle_step = 2.0f;   //[degrees]
+const float max_range = 21.0f;    //mt
+const float min_range = 1.0f;     //mt
+const float range_step = 2.0f;    // mt
+const float angle_step = 2.0f;   //[degrees]
 
-int tot_ranges = (int) ((max_range - min_range) / range_step);
-int tot_angles = (int) (360 / angle_step);
+const int tot_ranges = (int) ((max_range - min_range) / range_step);
+const int tot_angles = (int) (360 / angle_step);
 
 
-std::string cam_front_window_name = "cam_front";
-std::string cam_front_left_window_name = "cam_front_left";
+const std::string cam_front_window_name = "cam_front";
+const std::string cam_front_left_window_name = "cam_front_left";
 
 /**********************************************************************/
 
-uint32_t getRGB[] = {
+const uint32_t getRGB[] = {
         0x000000 , // 0 : noise
         0x4682b4 , // 1 : animal
         0x0000e6 , // 2 : human.pedestrian.adult, blue
@@ -64,7 +60,7 @@ uint32_t getRGB[] = {
         0xdeb887 , // 28: static.manmade Burlywood
         0xffe4c4 , // 29: static.other Bisque
         0x00af00 , // 20: static.vegetation Green
-        0xfff0f5 // 31: vehicle.ego
+        0xfff0f5   // 31: vehicle.ego
 };
 
 class Point {
@@ -128,6 +124,32 @@ void build_msg_Fields(sensor_msgs::PointCloud2 &msg) {
     msg.is_bigendian = false;
     msg.point_step = sizeof(float) * 5;
 }
+
+void cloudToMsg(std::vector<float> &cloud, std::vector<uint32_t> &labels, sensor_msgs::PointCloud2 &msg, int seq, ros::Time &stamp ) {
+    msg.header.seq = seq;
+    msg.header.stamp = stamp;
+    msg.width = cloud.size()/4;
+    msg.data.clear();
+    for (int i=0; i<cloud.size(); i++) {
+        floatToBytes.value = cloud[i];
+        msg.data.push_back(floatToBytes.byte[0]);
+        msg.data.push_back(floatToBytes.byte[1]);
+        msg.data.push_back(floatToBytes.byte[2]);
+        msg.data.push_back(floatToBytes.byte[3]);
+        if (i%4==3) {
+
+            uint32_tToBytes.value = labels[i/4];
+
+            msg.data.push_back(uint32_tToBytes.byte[0]);
+            msg.data.push_back(uint32_tToBytes.byte[1]);
+            msg.data.push_back(uint32_tToBytes.byte[2]);
+            msg.data.push_back(uint32_tToBytes.byte[3]);
+        }
+    }
+
+    msg.row_step = msg.data.size();
+}
+
 
 
 #endif //DATA_GENERATOR_MACRO_H

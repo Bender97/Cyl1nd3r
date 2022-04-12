@@ -6,9 +6,9 @@
 #define DATA_GENERATOR_CAMERAINFO_H
 
 #include <tf/transform_datatypes.h>
-#include "transform_utils.h"
 #include <opencv2/opencv.hpp>
 #include "macro.h"
+#include "transform_utils.h"
 
 class CameraInfo {
     std::vector<std::string> cam_paths;
