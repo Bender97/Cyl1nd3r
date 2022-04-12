@@ -57,43 +57,32 @@ void CameraInfo::loadData(std::ifstream &fin) {
     insertC1Record(fin);
 }
 
-bool CameraInfo::projectPoint(float x, float y, float z, int &px, int &py, int count, int rows, int cols) {
-    float tempx, tempy, tempz;
-    tf::Matrix3x3 rot;
-    tf::Vector3 trans;
+bool CameraInfo::projectPoint() {
 
-    rot = cs_record[count].getBasis(); trans = cs_record[count].getOrigin();
-    tempx = x * rot[0][0] + y * rot[0][1] + z * rot[0][2] + trans[0];
-    tempy = x * rot[1][0] + y * rot[1][1] + z * rot[1][2] + trans[1];
-    tempz = x * rot[2][0] + y * rot[2][1] + z * rot[2][2] + trans[2];
+    tempx = x * cs_record_rot[0][0] + y * cs_record_rot[0][1] + z * cs_record_rot[0][2] + cs_record_trans[0];
+    tempy = x * cs_record_rot[1][0] + y * cs_record_rot[1][1] + z * cs_record_rot[1][2] + cs_record_trans[1];
+    tempz = x * cs_record_rot[2][0] + y * cs_record_rot[2][1] + z * cs_record_rot[2][2] + cs_record_trans[2];
     x = tempx; y = tempy; z = tempz;
 
-
-    rot = pr_record[count].getBasis(); trans = pr_record[count].getOrigin();
-    tempx = x * rot[0][0] + y * rot[0][1] + z * rot[0][2] + trans[0];
-    tempy = x * rot[1][0] + y * rot[1][1] + z * rot[1][2] + trans[1];
-    tempz = x * rot[2][0] + y * rot[2][1] + z * rot[2][2] + trans[2];
+    tempx = x * pr_record_rot[0][0] + y * pr_record_rot[0][1] + z * pr_record_rot[0][2] + pr_record_trans[0];
+    tempy = x * pr_record_rot[1][0] + y * pr_record_rot[1][1] + z * pr_record_rot[1][2] + pr_record_trans[1];
+    tempz = x * pr_record_rot[2][0] + y * pr_record_rot[2][1] + z * pr_record_rot[2][2] + pr_record_trans[2];
     x = tempx; y = tempy; z = tempz;
 
-
-    rot = p1_record[count].getBasis().transpose(); trans = p1_record[count].getOrigin();
-    x -= (float) trans[0]; y -= (float) trans[1]; z -= (float) trans[2];
-    tempx = x * rot[0][0] + y * rot[0][1] + z * rot[0][2];
-    tempy = x * rot[1][0] + y * rot[1][1] + z * rot[1][2];
-    tempz = x * rot[2][0] + y * rot[2][1] + z * rot[2][2];
+    x -= (float) p1_record_trans[0]; y -= (float) p1_record_trans[1]; z -= (float) p1_record_trans[2];
+    tempx = x * p1_record_rot[0][0] + y * p1_record_rot[0][1] + z * p1_record_rot[0][2];
+    tempy = x * p1_record_rot[1][0] + y * p1_record_rot[1][1] + z * p1_record_rot[1][2];
+    tempz = x * p1_record_rot[2][0] + y * p1_record_rot[2][1] + z * p1_record_rot[2][2];
     x = tempx; y = tempy; z = tempz;
 
-
-    rot = c1_record[count].getBasis().transpose(); trans = c1_record[count].getOrigin();
-    x -= (float) trans[0]; y -= (float) trans[1]; z -= (float) trans[2];
-    tempx = x * rot[0][0] + y * rot[0][1] + z * rot[0][2];
-    tempy = x * rot[1][0] + y * rot[1][1] + z * rot[1][2];
-    tempz = x * rot[2][0] + y * rot[2][1] + z * rot[2][2];
+    x -= (float) c1_record_trans[0]; y -= (float) c1_record_trans[1]; z -= (float) c1_record_trans[2];
+    tempx = x * c1_record_rot[0][0] + y * c1_record_rot[0][1] + z * c1_record_rot[0][2];
+    tempy = x * c1_record_rot[1][0] + y * c1_record_rot[1][1] + z * c1_record_rot[1][2];
+    tempz = x * c1_record_rot[2][0] + y * c1_record_rot[2][1] + z * c1_record_rot[2][2];
     x = tempx; y = tempy; z = tempz;
 
     if (tempz<3) return false;
 
-    ci = camera_intrinsics[count];
     tempx = x * ci[0][0] + y * ci[0][1] + z * ci[0][2];
     tempy = x * ci[1][0] + y * ci[1][1] + z * ci[1][2];
     tempz = x * ci[2][0] + y * ci[2][1] + z * ci[2][2];
@@ -108,27 +97,33 @@ bool CameraInfo::projectPoint(float x, float y, float z, int &px, int &py, int c
     return true;
 }
 
-std::string CameraInfo::getPath(int count) {
+std::string CameraInfo::getPath(size_t count) {
     assert(count>=0 && count < cam_paths.size());
     return cam_paths[count];
 }
 
-void CameraInfo::paintToImage(int count, std::vector<float> &cloud, std::vector<uint32_t> &labels, std::string &window_name) {
+void CameraInfo::paintToImage(int count, std::vector<float> &cloud, std::vector<uint32_t> &labels, const std::string &window_name) {
     cv::Mat img = cv::imread(cam_paths[count]);
 
-    int px, py;
-    int skipped_points=0;
+    cs_record_rot = cs_record[count].getBasis(); cs_record_trans = cs_record[count].getOrigin();
+    pr_record_rot = pr_record[count].getBasis(); pr_record_trans = pr_record[count].getOrigin();
+    p1_record_rot = p1_record[count].getBasis().transpose(); p1_record_trans = p1_record[count].getOrigin();
+    c1_record_rot = c1_record[count].getBasis().transpose(); c1_record_trans = c1_record[count].getOrigin();
+    ci = camera_intrinsics[count];
+    rows = img.rows; cols = img.cols;
 
-    for (int p=0, cont=0; p<cloud.size(); p+=4, cont++) {
+    for (size_t p=0, cont=0; p<cloud.size(); p+=4, cont++) {
 
-        if ( ! projectPoint(cloud[p], cloud[p+1], cloud[p+2], px, py, count, img.rows, img.cols) ) {
-            skipped_points++;
+        x=cloud[p], y=cloud[p+1], z=cloud[p+2];
+        if ( ! projectPoint() ) {
             continue;
         }
         // draw the circle
         //uint32_tToBytes.value = getRGB[ labels[cont] ];
         uint32_tToBytes.value = labels[cont];
-        cv::circle(img, cv::Point(px, py), 5, cv::Scalar(uint32_tToBytes.byte[2],uint32_tToBytes.byte[1],uint32_tToBytes.byte[0]),-1,8,0);
+        cv::circle(img, cv::Point(px, py), 5,
+                   cv::Scalar(uint32_tToBytes.byte[2],uint32_tToBytes.byte[1],uint32_tToBytes.byte[0]),
+                   -1,8,0);
 
     }
 

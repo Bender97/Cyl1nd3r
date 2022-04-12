@@ -21,6 +21,13 @@ class CameraInfo {
     tf::Transform tr;   // ditto
     tf::Matrix3x3 ci;   // ditto
 
+    // variables to project points
+    tf::Matrix3x3 cs_record_rot, pr_record_rot, p1_record_rot, c1_record_rot;          // ditto
+    tf::Vector3 cs_record_trans, pr_record_trans, p1_record_trans, c1_record_trans;          // ditto
+    float x, y, z, tempx, tempy, tempz;  // ditto
+    int rows, cols;
+    int px, py;
+
 public:
 
     void reset();
@@ -39,11 +46,11 @@ public:
 
     void loadData(std::ifstream &fin);
 
-    bool projectPoint(float x, float y, float z, int &px, int &py, int count, int rows, int cols);
+    bool projectPoint();
 
-    std::string getPath(int count);
+    std::string getPath(size_t count);
 
-    void paintToImage(int count, std::vector<float> &cloud, std::vector<uint32_t> &labels, std::string &window_name);
+    void paintToImage(int count, std::vector<float> &cloud, std::vector<uint32_t> &labels, const std::string &window_name);
 };
 
 
