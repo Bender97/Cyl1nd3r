@@ -1,14 +1,9 @@
 #include "ros/ros.h"
-#include "std_msgs/String.h"
 #include <sensor_msgs/PointCloud2.h>
 #include <sensor_msgs/PointField.h>
 #include <sensor_msgs/Image.h>
-#include <sstream>
-#include <fstream>
 
-#include <opencv/cv.h>
 #include <cv_bridge/cv_bridge.h>
-#include <opencv2/core/core.hpp>
 #include <opencv2/imgcodecs.hpp>
 
 #include <tf/transform_datatypes.h>
@@ -18,11 +13,10 @@
 #include <iostream>
 #include <map>
 #include <regex>
+
 #include "macro.h"
-#include<opencv2/opencv.hpp>
-
 #include "transform_utils.h"
-
+#include "CameraInfo.h"
 
 float range=1, angle = 0;
 float rad_angle;
@@ -210,7 +204,6 @@ int main(int argc, char **argv)
     MapTrans.child_frame_id_ = "velodyne";
     // read from recipe file
     readPaths(recipepath, scanpaths, labelpaths, poses);
-
 
 
     // compute all colors

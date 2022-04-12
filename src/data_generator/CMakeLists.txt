@@ -61,11 +61,12 @@ link_directories(
 ## Build ##
 ###########
 
+add_library(CameraInfo src/CameraInfo.cpp include/CameraInfo.h)
+target_link_libraries(CameraInfo ${catkin_LIBRARIES})
 
-
-	# DataGenerator
-	add_executable(${PROJECT_NAME}_data_generator src/data_generator.cpp )
-	target_link_libraries(${PROJECT_NAME}_data_generator ${catkin_LIBRARIES} )
+# DataGenerator
+add_executable(${PROJECT_NAME}_data_generator src/data_generator.cpp )
+target_link_libraries(${PROJECT_NAME}_data_generator ${catkin_LIBRARIES} CameraInfo)
 #endif()
 
 install(DIRECTORY 
