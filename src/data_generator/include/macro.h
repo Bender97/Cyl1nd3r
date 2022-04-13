@@ -22,9 +22,10 @@ const float angle_step = 2.0f;   //[degrees]
 const int tot_ranges = (int) ((max_range - min_range) / range_step);
 const int tot_angles = (int) (360 / angle_step);
 
-
 const std::string cam_front_window_name = "cam_front";
 const std::string cam_front_left_window_name = "cam_front_left";
+
+const int clouds_to_stack = 4;
 
 /**********************************************************************/
 
@@ -130,20 +131,20 @@ void cloudToMsg(std::vector<float> &cloud, std::vector<uint32_t> &labels, sensor
     msg.header.stamp = stamp;
     msg.width = cloud.size()/4;
     msg.data.clear();
-    for (int i=0; i<cloud.size(); i++) {
+    msg.data.resize((cloud.size()<<2) + (labels.size() <<2) );
+
+    for (int i=0, ptr=0; i<cloud.size(); i++) {
         floatToBytes.value = cloud[i];
-        msg.data.push_back(floatToBytes.byte[0]);
-        msg.data.push_back(floatToBytes.byte[1]);
-        msg.data.push_back(floatToBytes.byte[2]);
-        msg.data.push_back(floatToBytes.byte[3]);
+        msg.data[ptr++] = floatToBytes.byte[0];
+        msg.data[ptr++] = floatToBytes.byte[1];
+        msg.data[ptr++] = floatToBytes.byte[2];
+        msg.data[ptr++] = floatToBytes.byte[3];
         if (i%4==3) {
-
-            uint32_tToBytes.value = labels[i/4];
-
-            msg.data.push_back(uint32_tToBytes.byte[0]);
-            msg.data.push_back(uint32_tToBytes.byte[1]);
-            msg.data.push_back(uint32_tToBytes.byte[2]);
-            msg.data.push_back(uint32_tToBytes.byte[3]);
+            uint32_tToBytes.value = labels[i>>2];
+            msg.data[ptr++] = uint32_tToBytes.byte[0];
+            msg.data[ptr++] = uint32_tToBytes.byte[1];
+            msg.data[ptr++] = uint32_tToBytes.byte[2];
+            msg.data[ptr++] = uint32_tToBytes.byte[3];
         }
     }
 

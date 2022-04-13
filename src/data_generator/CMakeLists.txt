@@ -64,9 +64,12 @@ link_directories(
 add_library(CameraInfo src/CameraInfo.cpp include/CameraInfo.h)
 target_link_libraries(CameraInfo ${catkin_LIBRARIES})
 
+add_library(CloudIntegrator src/CloudIntegrator.cpp include/CloudIntegrator.h)
+target_link_libraries(CameraInfo ${catkin_LIBRARIES})
+
 # DataGenerator
 add_executable(${PROJECT_NAME}_data_generator src/data_generator.cpp )
-target_link_libraries(${PROJECT_NAME}_data_generator ${catkin_LIBRARIES} CameraInfo)
+target_link_libraries(${PROJECT_NAME}_data_generator ${catkin_LIBRARIES} CameraInfo CloudIntegrator)
 #endif()
 
 install(DIRECTORY 

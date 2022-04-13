@@ -16,6 +16,7 @@
 #include "CameraInfo.h"
 #include "macro.h"
 #include "Reader.h"
+#include "CloudIntegrator.h"
 
 float range=1, angle = 0;
 float rad_angle;
@@ -90,8 +91,8 @@ int main(int argc, char **argv)
     std::vector<std::string> scanpaths, labelpaths;
     std::vector<tf::Transform> poses;
 
-//    tf::TransformListener listener;
-//    tf::StampedTransform transform;
+    CloudIntegrator cloudIntegrator(4);
+
 
     // initialize
     build_msg_Fields(lidar_msg);
@@ -118,13 +119,6 @@ int main(int argc, char **argv)
     ros::Rate loop_rate(1);
     int count = 0;
 
-    tf::Transform prev_t, curr_t, t;
-    tf::Vector3 trans;
-    tf::Matrix3x3 rot;
-    float tempx, tempy, tempz;
-    std::vector<float>      prev_cloud;
-    std::vector<uint32_t>   prev_labels;
-
     while (ros::ok())
     {
         ros::Time stamp =  ros::Time::now();
@@ -137,12 +131,30 @@ int main(int argc, char **argv)
 
         sortInGrid_getLabels(lidar_cloud, grid_labels);
 
+
 //        cloudToMsg(lidar_cloud, grid_labels, lidar_msg, count, stamp);
         cloudToMsg(lidar_cloud, lidar_labels, lidar_msg, count, stamp);
         pointcloud_pub.publish(lidar_msg);
 
+        std::cout << "lidar_cloud size:" << lidar_cloud.size()/4 << std::endl;
+
         cloudToMsg(grid_cloud, colors, lidar_msg, count, stamp);
         grid_pub.publish(lidar_msg);
+
+
+
+        // send vehicle ego pose
+        MapTrans.stamp_ = stamp;
+        MapTrans.setData(poses[count]);
+        tfBroadcaster.sendTransform(MapTrans);
+
+        if (count>0)
+            cloudIntegrator.stack_a_cloud(lidar_cloud, lidar_labels, poses[count-1], poses[count]);
+        else
+            cloudIntegrator.stack_a_cloud(lidar_cloud, lidar_labels, poses[count], poses[count]);
+        cloudToMsg(cloudIntegrator.cloud_stack, cloudIntegrator.labels_stack, lidar_msg, count, stamp);
+        prev_pointcloud_pub.publish(lidar_msg);
+
 
         // publish an image (to be visible from rviz)
 //        camera_front_msg = readImageFile(cameras[0].getPath(count)).value();
@@ -151,59 +163,14 @@ int main(int argc, char **argv)
 //        camera_front_pub.publish(camera_front_msg);
 
         // paint clouds to image (using cv::imshow)
-        cameras[0].paintToImage(count, grid_cloud, colors, cam_front_window_name);
-        cameras[1].paintToImage(count, lidar_cloud, lidar_labels, cam_front_left_window_name);
-
-        // send vehicle ego pose
-        MapTrans.stamp_ = stamp;
-        MapTrans.setData(poses[count]);
-        tfBroadcaster.sendTransform(MapTrans);
-
-        if (count>0) {
-            prev_t = poses[count-1];
-            curr_t.setOrigin(- poses[count].getOrigin());
-            curr_t.setBasis( poses[count].getBasis().transpose());
-//            prev_t.setOrigin(- poses[count-1].getOrigin());
-//            prev_t.setBasis( poses[count-1].getBasis().transpose());
-//            curr_t = poses[count];
-
-//            t = prev_t * curr_t;
-//            trans = t.getOrigin();
-//            rot = t.getBasis();
-
-            trans = prev_t.getOrigin();
-            rot = prev_t.getBasis();
-
-            for (size_t i=0; i<prev_cloud.size(); i+=4) {
-                x = prev_cloud[i]; y = prev_cloud[i+1]; z = prev_cloud[i+2];
-                prev_cloud[ i ] = rot[0][0]*x + rot[0][1]*y + rot[0][2]*z + trans[0];
-                prev_cloud[i+1] = rot[1][0]*x + rot[1][1]*y + rot[1][2]*z + trans[1];
-                prev_cloud[i+2] = rot[2][0]*x + rot[2][1]*y + rot[2][2]*z + trans[2];
-            }
-
-            trans = curr_t.getOrigin();
-            rot = curr_t.getBasis();
-
-            for (size_t i=0; i<prev_cloud.size(); i+=4) {
-                x = prev_cloud[i] + trans[0]; y = prev_cloud[i+1] + trans[1]; z = prev_cloud[i+2] + trans[2];
-                prev_cloud[ i ] = rot[0][0]*x + rot[0][1]*y + rot[0][2]*z;
-                prev_cloud[i+1] = rot[1][0]*x + rot[1][1]*y + rot[1][2]*z;
-                prev_cloud[i+2] = rot[2][0]*x + rot[2][1]*y + rot[2][2]*z;
-            }
-
-            cloudToMsg(prev_cloud, prev_labels, lidar_msg, count, stamp);
-            prev_pointcloud_pub.publish(lidar_msg);
-            
-        }
+//        cameras[0].paintToImage(count, grid_cloud, colors, cam_front_window_name);
+        cameras[0].paintToImage(count, cloudIntegrator.cloud_stack, cloudIntegrator.labels_stack, cam_front_window_name);
 
         ROS_INFO("published cloud %d", count);
 
         ros::spinOnce();
 
         loop_rate.sleep();
-
-        prev_cloud = lidar_cloud;
-        prev_labels = lidar_labels;
 
         ++count;
     }
