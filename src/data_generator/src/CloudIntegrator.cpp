@@ -85,6 +85,4 @@ void CloudIntegrator::stack_a_cloud(std::vector<float> &cloud, std::vector<uint3
         clouds_end[clouds_to_stack-1] = clouds_end[clouds_to_stack-2] + cloud.size();
 
     }
-
-    std::cout << "Finished stacking a cloud" << std::endl;
 }
